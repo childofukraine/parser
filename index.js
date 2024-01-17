@@ -56,7 +56,7 @@ async function parse(url) {
     });
 
     const title = await page.title();
-    const brand = $extractor(schema).brand || $hostname(url);
+    const brand = $hostname(url);
     const href = $extractor(schema).image;
     const currency = $extractor(schema).currency;
     const price = $extractor(schema).price;
