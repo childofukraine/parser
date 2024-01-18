@@ -53,9 +53,9 @@ function $extractor(schema) {
   const image = extractImageUrl(findValue(schema, 'image'));
 
   return {
-    image,
-    price: price || 'N/A',
-    currency: $currency(currency) || currency || 'N/A',
+    image: image || undefined,
+    price: price || undefined,
+    currency: $currency(currency) || currency || undefined,
   };
 }
 
