@@ -18,10 +18,10 @@ app.post('/', async (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log('listening on port 8080 (test cors)');
+  console.log(`Listening on port ${port} (test cors)`);
 });
 
-const _headers = {
+const defaultHeaders = {
   'user-agent':
     'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
   'upgrade-insecure-requests': '1',
@@ -35,7 +35,7 @@ async function parse(url) {
   try {
     const browser = await puppeteer.launch({
       headless: 'new',
-      // executablePath: '/usr/bin/chromium-browser',
+      executablePath: '/usr/bin/chromium-browser',
       ignoreDefaultArgs: ['--disable-extensions'],
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
       defaultViewport: {
@@ -45,41 +45,63 @@ async function parse(url) {
     });
 
     const page = await browser.newPage();
-    await page.setExtraHTTPHeaders(_headers);
+    await page.setExtraHTTPHeaders(defaultHeaders);
     await page.goto(url, { waitUntil: 'domcontentloaded' });
 
-    const schema = await page.evaluate(() => {
-      const ldJsonScript = Array.from(
-        document.querySelectorAll('script[type="application/ld+json"]')
-      );
-      return ldJsonScript.map((script) => JSON.parse(script.textContent));
-    });
+    const schema = await extractJsonLD(page);
 
     const linkTag = await page.$('link[rel="preload"][as="image"]');
-    const linkImageAttributes = await page.evaluate((link) => {
-      const attributes = {};
-      for (const attr of link.attributes) {
-        attributes[attr.name] = attr.value;
-      }
-      return attributes;
-    }, linkTag);
+    const scriptHrefImage = linkTag
+      ? await extractLinkImageAttributes(page, linkTag)
+      : undefined;
 
     const title = await page.title();
     const brand = $hostname(url);
-    const href = linkImageAttributes?.href || $extractor(schema).image;
+    const href = scriptHrefImage?.href || $extractor(schema).image;
     const currency = $extractor(schema).currency;
     const price = $extractor(schema).price;
 
     await browser.close();
 
-    return {
+    const result = {
       title,
       href,
       brand,
       currency,
       price,
     };
+
+    return result;
   } catch (error) {
     console.error('Error:', error.message);
+    return { error: error.message };
   }
 }
+
+async function extractJsonLD(page) {
+  return page.evaluate(() => {
+    const ldJsonScript = Array.from(
+      document.querySelectorAll('script[type="application/ld+json"]')
+    );
+    return ldJsonScript?.map((script) => JSON.parse(script.textContent));
+  });
+}
+
+async function extractLinkImageAttributes(page, linkTag) {
+  return page.evaluate((link) => {
+    const attributes = {};
+    const imageFormats = ['.jpg', '.jpeg', '.png', '.webp'];
+
+    for (const attr of link.attributes) {
+      if (imageFormats.some((format) => attr.value.includes(format))) {
+        attributes[attr.name] = attr.value;
+      }
+    }
+
+    return attributes;
+  }, linkTag);
+}
+
+parse(
+  'https://www.sephora.com/product/patrick-ta-major-headlines-cream-powder-blush-duo-P458747?country_switch=us&lang=en&skuId=2363844&om_mmc=ppc-GG_17789371101___2363844__9060248_c&country_switch=us&lang=en&gad_source=1&gclid=EAIaIQobChMI7O70heHlgwMVhV9HAR2MDgExEAQYASABEgIkJ_D_BwE&gclsrc=aw.ds'
+);
