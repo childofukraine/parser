@@ -35,7 +35,7 @@ async function parse(url) {
   try {
     const browser = await puppeteer.launch({
       headless: 'new',
-      executablePath: '/usr/bin/chromium-browser',
+      // executablePath: '/usr/bin/chromium-browser',
       ignoreDefaultArgs: ['--disable-extensions'],
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
       defaultViewport: {
@@ -55,9 +55,18 @@ async function parse(url) {
       return ldJsonScript.map((script) => JSON.parse(script.textContent));
     });
 
+    const linkTag = await page.$('link[rel="preload"][as="image"]');
+    const linkImageAttributes = await page.evaluate((link) => {
+      const attributes = {};
+      for (const attr of link.attributes) {
+        attributes[attr.name] = attr.value;
+      }
+      return attributes;
+    }, linkTag);
+
     const title = await page.title();
     const brand = $hostname(url);
-    const href = $extractor(schema).image;
+    const href = linkImageAttributes?.href || $extractor(schema).image;
     const currency = $extractor(schema).currency;
     const price = $extractor(schema).price;
 
