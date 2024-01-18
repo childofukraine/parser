@@ -1,14 +1,16 @@
 const bodyParser = require('body-parser');
 const express = require('express');
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-extra');
 const $extractor = require('./utils/extractor');
 const $currency = require('./utils/currency');
 const $hostname = require('./utils/hostname');
 const cors = require('cors');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 
 const app = express();
 const port = 8080;
 
+puppeteer.use(StealthPlugin());
 app.use(cors());
 app.use(bodyParser.json());
 
@@ -103,23 +105,79 @@ class PageParser {
     return null;
   }
 
+  async extractMetadataTags() {
+    try {
+      return await this.page.evaluate(() => {
+        const metadataTags = [
+          'twitter:image',
+          'og:image',
+          'og:price',
+          'og:currency',
+          'og:price:amount',
+          'og:price:currency',
+        ];
+        const extractedTags = {};
+
+        for (const tag of metadataTags) {
+          const tagElement = document.querySelector(
+            `meta[property="${tag}"], meta[name="${tag}"]`
+          );
+          if (tagElement) {
+            extractedTags[tag] = tagElement.getAttribute('content');
+          }
+        }
+
+        return extractedTags;
+      });
+    } catch (error) {
+      console.error('Error extracting metadata tags:', error.message);
+      return null;
+    }
+  }
+
   async parse() {
     const schema = await this.extractJsonLD();
-    const image = await this.extractImage();
-    const currency = this.extractCurrency(schema);
-    const price = this.extractPrice(schema);
 
-    return {
+    // If no application/json+ld, try extracting from metadata tags
+    const metadataTags = await this.extractMetadataTags();
+
+    let metaObj = {
       title: await this.page.title(),
       brand: $hostname(this.page.url()),
-      href: this.fixImageUrl(image) || '',
-      currency: currency || 'N/A',
-      price: price || 'N/A',
+    };
+    // Use metadata tags if available
+    if (metadataTags && Object.keys(metadataTags).length > 0) {
+      metaObj = {
+        title: await this.page.title(),
+        brand: $hostname(this.page.url()),
+        href:
+          (await this.extractImage()) ||
+          this.fixImageUrl(
+            metadataTags['twitter:image'] || metadataTags['og:image']
+          ) ||
+          '',
+        currency:
+          (await this.extractCurrency(schema)) ||
+          metadataTags[('og:currency', 'og:price:currency')] ||
+          'N/A',
+        price:
+          (await this.extractPrice(schema)) ||
+          metadataTags[('og:price', 'og:price:amount')] ||
+          'N/A',
+      };
+    }
+
+    return {
+      title: metaObj.title,
+      brand: metaObj.brand,
+      href: this.fixImageUrl(metaObj.href) || '',
+      currency: $currency(metaObj.currency) || 'N/A',
+      price: metaObj.price || 'N/A',
     };
   }
 
   extractCurrency(schema) {
-    return $currency(this.findValue(schema, 'priceCurrency'));
+    return this.findValue(schema, 'priceCurrency');
   }
 
   extractPrice(schema) {
@@ -146,46 +204,13 @@ class PageParser {
   }
 }
 
-function extractImageUrl(image) {
-  if (Array.isArray(image)) {
-    const urlFromObjects = image
-      .map((img) => {
-        if (img && typeof img === 'object') {
-          const urlKey = Object.keys(img).find((key) =>
-            key.toLowerCase().includes('url')
-          );
-          return urlKey ? img[urlKey] : null;
-        }
-        return null;
-      })
-      .filter(Boolean);
-
-    return urlFromObjects.length > 0 ? urlFromObjects[0] : 'N/A';
-  }
-
-  if (typeof image === 'object') {
-    // Try to find a key that includes 'url'
-    const urlKey = Object.keys(image).find((key) =>
-      key.toLowerCase().includes('url')
-    );
-    return urlKey ? image[urlKey] : 'N/A';
-  }
-
-  return typeof image === 'string' ? image : 'N/A';
-}
-
 async function parse(url) {
-  // const proxy = 'http://64.189.106.6:3129';
   try {
     const browser = await puppeteer.launch({
       headless: 'new',
       executablePath: '/usr/bin/chromium-browser',
       ignoreDefaultArgs: ['--disable-extensions'],
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        // `--proxy-server=${proxy}`,
-      ],
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
       defaultViewport: {
         width: 1366,
         height: 1024,
@@ -205,7 +230,6 @@ async function parse(url) {
 
     await browser.close();
 
-    console.log(result);
     return result;
   } catch (error) {
     console.error('Error:', error.message);
