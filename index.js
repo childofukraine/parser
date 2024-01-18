@@ -1,7 +1,8 @@
 const bodyParser = require('body-parser');
 const express = require('express');
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('puppeteer');
 const $extractor = require('./utils/extractor');
+const $currency = require('./utils/currency');
 const $hostname = require('./utils/hostname');
 const cors = require('cors');
 
@@ -31,11 +32,152 @@ const defaultHeaders = {
   'accept-language': 'en-US,en;q=0.9,en;q=0.8',
 };
 
+class PageParser {
+  constructor(page) {
+    this.page = page;
+  }
+
+  fixImageUrl(url) {
+    if (url) {
+      // Remove leading slashes
+      url = url.replace(/^\/+/, '');
+
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        // Add 'https://' as a default protocol
+        url = 'https://' + url;
+      }
+    }
+    return url;
+  }
+
+  async extractJsonLD() {
+    try {
+      return await this.page.evaluate(() => {
+        const ldJsonScript = Array.from(
+          document.querySelectorAll('script[type="application/ld+json"]')
+        );
+        return ldJsonScript?.map((script) => JSON.parse(script.textContent));
+      });
+    } catch (error) {
+      console.error('Error parsing JSON LD:', error.message);
+      return null;
+    }
+  }
+
+  async extractImage() {
+    const linkTag = await this.page.$('link[rel="preload"][as="image"]');
+    const schema = await this.extractJsonLD();
+
+    try {
+      if (linkTag) {
+        const attributes = await this.page.evaluate((link) => {
+          const imageFormats = ['.jpg', '.jpeg', '.png', '.webp'];
+          const attributes = {};
+
+          for (const attr of link.attributes) {
+            if (imageFormats.some((format) => attr.value.includes(format))) {
+              attributes[attr.name] = attr.value;
+            }
+          }
+
+          return attributes;
+        }, linkTag);
+
+        if (attributes.href) {
+          return attributes.href;
+        }
+      }
+    } catch (error) {
+      console.error(
+        'Error extracting attributes using linkTag:',
+        error.message
+      );
+    }
+
+    const image = $extractor(schema, 'image').image;
+    if (image && image !== 'N/A') {
+      return image;
+    }
+
+    // If both methods fail, return null or handle it as needed
+    return null;
+  }
+
+  async parse() {
+    const schema = await this.extractJsonLD();
+    const image = await this.extractImage();
+    const currency = this.extractCurrency(schema);
+    const price = this.extractPrice(schema);
+
+    return {
+      title: await this.page.title(),
+      brand: $hostname(this.page.url()),
+      href: this.fixImageUrl(image) || '',
+      currency: currency || 'N/A',
+      price: price || 'N/A',
+    };
+  }
+
+  extractCurrency(schema) {
+    return $currency(this.findValue(schema, 'priceCurrency'));
+  }
+
+  extractPrice(schema) {
+    return this.findValue(schema, 'price');
+  }
+
+  findValue(obj, key) {
+    if (!obj || typeof obj !== 'object') {
+      return null;
+    }
+
+    if (key in obj) {
+      return obj[key];
+    }
+
+    for (const prop in obj) {
+      const value = this.findValue(obj[prop], key);
+      if (value !== null) {
+        return value;
+      }
+    }
+
+    return null;
+  }
+}
+
+function extractImageUrl(image) {
+  if (Array.isArray(image)) {
+    const urlFromObjects = image
+      .map((img) => {
+        if (img && typeof img === 'object') {
+          const urlKey = Object.keys(img).find((key) =>
+            key.toLowerCase().includes('url')
+          );
+          return urlKey ? img[urlKey] : null;
+        }
+        return null;
+      })
+      .filter(Boolean);
+
+    return urlFromObjects.length > 0 ? urlFromObjects[0] : 'N/A';
+  }
+
+  if (typeof image === 'object') {
+    // Try to find a key that includes 'url'
+    const urlKey = Object.keys(image).find((key) =>
+      key.toLowerCase().includes('url')
+    );
+    return urlKey ? image[urlKey] : 'N/A';
+  }
+
+  return typeof image === 'string' ? image : 'N/A';
+}
+
 async function parse(url) {
   try {
     const browser = await puppeteer.launch({
       headless: 'new',
-      executablePath: '/usr/bin/chromium-browser',
       ignoreDefaultArgs: ['--disable-extensions'],
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
       defaultViewport: {
@@ -43,34 +185,17 @@ async function parse(url) {
         height: 1024,
       },
     });
-
     const page = await browser.newPage();
     await page.setExtraHTTPHeaders(defaultHeaders);
+
     await page.goto(url, { waitUntil: 'domcontentloaded' });
 
-    const schema = await extractJsonLD(page);
-
-    const linkTag = await page.$('link[rel="preload"][as="image"]');
-    const scriptHrefImage = linkTag
-      ? await extractLinkImageAttributes(page, linkTag)
-      : undefined;
-
-    const title = await page.title();
-    const brand = $hostname(url);
-    const href = scriptHrefImage?.href || $extractor(schema).image;
-    const currency = $extractor(schema).currency;
-    const price = $extractor(schema).price;
+    const parser = new PageParser(page);
+    const result = await parser.parse();
 
     await browser.close();
 
-    const result = {
-      title,
-      href,
-      brand,
-      currency,
-      price,
-    };
-
+    console.log(result);
     return result;
   } catch (error) {
     console.error('Error:', error.message);
@@ -78,30 +203,6 @@ async function parse(url) {
   }
 }
 
-async function extractJsonLD(page) {
-  return page.evaluate(() => {
-    const ldJsonScript = Array.from(
-      document.querySelectorAll('script[type="application/ld+json"]')
-    );
-    return ldJsonScript?.map((script) => JSON.parse(script.textContent));
-  });
-}
-
-async function extractLinkImageAttributes(page, linkTag) {
-  return page.evaluate((link) => {
-    const attributes = {};
-    const imageFormats = ['.jpg', '.jpeg', '.png', '.webp'];
-
-    for (const attr of link.attributes) {
-      if (imageFormats.some((format) => attr.value.includes(format))) {
-        attributes[attr.name] = attr.value;
-      }
-    }
-
-    return attributes;
-  }, linkTag);
-}
-
 parse(
-  'https://www.sephora.com/product/patrick-ta-major-headlines-cream-powder-blush-duo-P458747?country_switch=us&lang=en&skuId=2363844&om_mmc=ppc-GG_17789371101___2363844__9060248_c&country_switch=us&lang=en&gad_source=1&gclid=EAIaIQobChMI7O70heHlgwMVhV9HAR2MDgExEAQYASABEgIkJ_D_BwE&gclsrc=aw.ds'
+  'https://www.macys.com/shop/product/max-olivia-big-girls-top-pants-with-scrunchie-3-piece-set?ID=16440806'
 );
