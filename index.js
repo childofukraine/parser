@@ -175,11 +175,17 @@ function extractImageUrl(image) {
 }
 
 async function parse(url) {
+  // const proxy = 'http://64.189.106.6:3129';
   try {
     const browser = await puppeteer.launch({
       headless: 'new',
+      executablePath: '/usr/bin/chromium-browser',
       ignoreDefaultArgs: ['--disable-extensions'],
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        // `--proxy-server=${proxy}`,
+      ],
       defaultViewport: {
         width: 1366,
         height: 1024,
@@ -189,6 +195,10 @@ async function parse(url) {
     await page.setExtraHTTPHeaders(defaultHeaders);
 
     await page.goto(url, { waitUntil: 'domcontentloaded' });
+
+    await page.screenshot({
+      path: 'tjmax.png',
+    });
 
     const parser = new PageParser(page);
     const result = await parser.parse();
@@ -202,7 +212,3 @@ async function parse(url) {
     return { error: error.message };
   }
 }
-
-parse(
-  'https://www.macys.com/shop/product/max-olivia-big-girls-top-pants-with-scrunchie-3-piece-set?ID=16440806'
-);
