@@ -1,18 +1,6 @@
 const $currency = require('./currency');
 
 function $extractor(schema) {
-  function extractBrandName(brand) {
-    if (!brand) {
-      return 'N/A';
-    }
-
-    if (typeof brand === 'object') {
-      return brand.name || 'N/A';
-    }
-
-    return String(brand);
-  }
-
   function findValue(obj, key) {
     if (!obj || typeof obj !== 'object') {
       return null;
@@ -32,18 +20,40 @@ function $extractor(schema) {
     return null;
   }
 
-  const brand = extractBrandName(findValue(schema, 'brand'));
-  const price = findValue(schema, 'price');
-  const currency = findValue(schema, 'priceCurrency');
-  let image = findValue(schema, 'image');
+  function extractImageUrl(image) {
+    if (Array.isArray(image)) {
+      const urlFromObjects = image
+        .map((img) => {
+          if (img && typeof img === 'object') {
+            const urlKey = Object.keys(img).find((key) =>
+              key.toLowerCase().includes('url')
+            );
+            return urlKey ? img[urlKey] : null;
+          }
+          return null;
+        })
+        .filter(Boolean);
 
-  if (Array.isArray(image)) {
-    image = image.length > 0 ? image[0] : null;
+      return urlFromObjects.length > 0 ? urlFromObjects[0] : 'N/A';
+    }
+
+    if (typeof image === 'object') {
+      // Try to find a key that includes 'url'
+      const urlKey = Object.keys(image).find((key) =>
+        key.toLowerCase().includes('url')
+      );
+      return urlKey ? image[urlKey] : 'N/A';
+    }
+
+    return typeof image === 'string' ? image : 'N/A';
   }
 
+  const price = findValue(schema, 'price');
+  const currency = findValue(schema, 'priceCurrency');
+  const image = extractImageUrl(findValue(schema, 'image'));
+
   return {
-    brand,
-    image: image || 'N/A',
+    image,
     price: price || 'N/A',
     currency: $currency(currency) || currency || 'N/A',
   };

@@ -61,18 +61,12 @@ async function parse(url) {
     const currency = $extractor(schema).currency;
     const price = $extractor(schema).price;
 
-    const description = await page.$eval(
-      "head > meta[name='description']",
-      (element) => element.content
-    );
-
     await browser.close();
 
     return {
       title,
       href,
       brand,
-      description,
       currency,
       price,
     };
