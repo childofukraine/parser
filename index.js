@@ -145,6 +145,7 @@ class PageParser {
       title: await this.page.title(),
       brand: $hostname(this.page.url()),
     };
+
     // Use metadata tags if available
     if (metadataTags && Object.keys(metadataTags).length > 0) {
       metaObj = {
@@ -158,11 +159,13 @@ class PageParser {
           '',
         currency:
           (await this.extractCurrency(schema)) ||
-          metadataTags[('og:currency', 'og:price:currency')] ||
+          metadataTags['og:currency'] ||
+          metadataTags['og:price:currency'] ||
           'N/A',
         price:
           (await this.extractPrice(schema)) ||
-          metadataTags[('og:price', 'og:price:amount')] ||
+          metadataTags['og:price'] ||
+          metadataTags['og:price:amount'] ||
           'N/A',
       };
     }
