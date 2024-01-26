@@ -21,7 +21,7 @@ app.post('/', async (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`Listening on port ${port} (test cors)`);
+  console.log(`Listening on port ${port} (v0.5)`);
 });
 
 const defaultHeaders = {
@@ -231,11 +231,14 @@ async function parse(url) {
     const parser = new PageParser(page);
     const result = await parser.parse();
 
+    await page.close()
     await browser.close();
 
     return result;
   } catch (error) {
     console.error('Error:', error.message);
     return { error: error.message };
+  } finally {
+    process.exit()
   }
 }
