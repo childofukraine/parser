@@ -10,14 +10,15 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const app = express();
 const port = 8080;
 
-puppeteer.use(StealthPlugin());
 app.use(cors());
 app.use(bodyParser.json());
+puppeteer.use(StealthPlugin());
 
 app.post('/', async (req, res) => {
   const url = req.body.url;
   const response = await parse(url);
-  res.json(response);
+  res.json(response)
+  process.exit()
 });
 
 app.listen(port, () => {
@@ -238,7 +239,5 @@ async function parse(url) {
   } catch (error) {
     console.error('Error:', error.message);
     return { error: error.message };
-  } finally {
-    process.exit()
   }
 }
