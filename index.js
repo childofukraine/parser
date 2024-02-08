@@ -116,6 +116,8 @@ class PageParser {
           'og:currency',
           'og:price:amount',
           'og:price:currency',
+          'product:price.amount',
+          'product:price.currency',
         ];
         const extractedTags = {};
 
