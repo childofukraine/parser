@@ -1,11 +1,20 @@
 function $hostname(url) {
-  const hostnameRegex = /^(?:https?:\/\/)?(?:www\.)?([^\/]+)/i;
-  const match = url.match(hostnameRegex);
-  if (match) {
-    const siteName = match[1].split('.')[0]; // Extract the first part of the hostname
-    return siteName.charAt(0).toUpperCase() + siteName.slice(1); // Capitalize the first letter
+  try {
+    const urlObj = new URL(url);
+    const hostnameParts = urlObj.hostname.split('.');
+    // Check if the hostname has at least two parts
+    if (hostnameParts.length >= 2) {
+      // Capitalize the first letter of the sitename
+      const sitename = hostnameParts[1];
+      return sitename.charAt(0).toUpperCase() + sitename.slice(1);
+    } else {
+      // If the hostname has only one part, return it
+      return urlObj.hostname;
+    }
+  } catch (error) {
+    console.error('Error extracting sitename:', error);
+    return '';
   }
-  return '';
 }
 
 module.exports = $hostname;
