@@ -22,7 +22,7 @@ app.post('/', async (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`Listening on port ${port} (v0.5)`);
+  console.log(`Listening on port ${port} (v0.10)`);
 });
 
 const defaultHeaders = {
